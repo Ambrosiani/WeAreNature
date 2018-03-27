@@ -30,11 +30,6 @@ export const sendReminders = async (event: IEventPayload, context, callback: ICa
     };
 
     const results = await dynamoDBScanPromise(scanParams);
-
-    if (results.Items.length === 0) {
-      return;
-    }
-
     const emailsChunkedBySubcategory = results.Items.reduce((obj, emailUser) => {
       const subcategory = emailUser.subcategory;
       obj[subcategory] = (obj[subcategory] || []).concat(emailUser);
@@ -45,6 +40,19 @@ export const sendReminders = async (event: IEventPayload, context, callback: ICa
     const functionName = context.functionName.split('-').pop();
     const from = `We Are Nature <WeAreNaturePGH@${process.env.mailgunDomain}>`;
 
+    // Bug 1: if the db query retured no objects, the lambda callback was not being triggered
+    // since it was only in the forEach case when there are emails to be sent
+    if (Object.keys(emailsChunkedBySubcategory).length === 0) {
+      callback(null, {
+        statusCode: HTTPStatusCodes.OK,
+        body: JSON.stringify(results),
+      });
+      return;
+    }
+
+
+    // Bug 2: 'emails' variable might contain bad emails as they are not validated.
+    // Filter invalid emails to prevent .send call from failing
     Object.keys(emailsChunkedBySubcategory).forEach(function(subcategory) {
       const chunk = emailsChunkedBySubcategory[subcategory];
       const emails = chunk.map(emailUser => emailUser.email);
@@ -65,9 +73,19 @@ export const sendReminders = async (event: IEventPayload, context, callback: ICa
       };
   
       mailgun.messages().send(emailData, function (e) {
-        if (e) { console.log(e); }
-        // Not a big deal if it fails to send...
-        // But still log it!
+        // Bug 3: callback not called when send is complete causing a lambda timeout
+        if (e) {
+          callback(e, {
+            statusCode: HTTPStatusCodes.InternalServerError,
+            body: JSON.stringify({count: results.Count, scanned: results.ScannedCount}),
+          });
+          console.log(e);
+        } else {
+          callback(null, {
+            statusCode: HTTPStatusCodes.OK,
+            body: JSON.stringify({count: results.Count, scanned: results.ScannedCount}),
+          });
+        }
       });
     });
   } catch (e) {
