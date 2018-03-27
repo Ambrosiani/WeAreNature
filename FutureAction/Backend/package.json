@@ -4,7 +4,8 @@
   "description": "We Are Nature Future Action Backend",
   "main": "handler.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "debug": "export NODE_ENV=dev SLS_DEBUG=* AWS_REGION=us-east-1 && node --inspect ./node_modules/.bin/serverless offline -s dev"
   },
   "devDependencies": {
     "copy-webpack-plugin": "^4.1.0",
